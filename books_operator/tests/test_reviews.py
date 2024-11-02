@@ -44,7 +44,7 @@ class CustomerViewSetTest(APITestCase):
         self.regular_token = str(AccessToken.for_user(self.regular_user))
         self.admin_token = str(AccessToken.for_user(self.admin_user))
 
-        self.profile_url = reverse('customer-profile')
+        self.profile_url = reverse('customer-list')
 
         self.client = APIClient()
     
@@ -70,8 +70,8 @@ class CustomerViewSetTest(APITestCase):
 
         response = self.client.get(self.profile_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['username'], self.regular_user.username)
-        self.assertEqual(response.data['phone_number'], self.regular_customer.phone_number)
+        self.assertEqual(response.data[0]['username'], self.regular_user.username)
+        self.assertEqual(response.data[0]['phone_number'], self.regular_customer.phone_number)
 
     def test_get_profile_as_admin(self):
         self.api_authentication(self.admin_token)
