@@ -1,12 +1,15 @@
 from rest_framework import viewsets, status 
-from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAuthenticatedOrReadOnly, IsAdminUser, IsAuthenticated, AllowAny
+from rest_framework.exceptions import ValidationError
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.decorators import action  
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
-from .models import Book
+from .models import *
 from .serializers import *
+from .kafka_producer import *
+import json
 
 
 class AddBookToStore(viewsets.ModelViewSet):
@@ -66,29 +69,81 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         if self.request.user.is_staff:
-            return super().get_queryset()  
+            return super().get_queryset()
         return super().get_queryset().filter(user=self.request.user)
 
-    # Only Unautharized user can create new profile
+    def get_permissions(self):
+        if self.action == 'create':
+            return [AllowAny()]
+        return super().get_permissions()
+
     def create(self, request, *args, **kwargs):
         if request.user.is_authenticated:
-            raise PermissionDenied("Вы уже вошли в систему и не можете создать новый аккаунт.")
-        return super().create(request, *args, **kwargs)
+            raise PermissionDenied("You are already authenticated, you cannot create an account.")
+        
+        user_data = {
+            'username': request.data.get('username'),
+            'email': request.data.get('email'),
+            'password': request.data.get('password')
+        }
+        
+        if not all([user_data['username'], user_data['password']]):
+            raise ValidationError("Required username and password.")
+        
+        try:
+            user = User.objects.create_user(**user_data)
+        except Exception as e:
+            raise ValidationError(f"Error creating user: {str(e)}")
+
+    
+        user = User.objects.get(username=user_data['username'])
+        customer_data = {
+            'user': user.id, 
+            'phone_number': request.data.get('phone_number'),
+            'address': request.data.get('address', '')
+        }
+
+        serializer = self.get_serializer(data=customer_data)
+    
+        try:
+            serializer.is_valid(raise_exception=True)
+        except ValidationError as e:
+            user.delete()
+            raise e
+
+        self.perform_create(serializer)
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
         customer = self.get_object()
         if customer.user != request.user and not request.user.is_staff:
-            return Response({"error": "You can only update your own profile."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"error": "You can update only your profile."}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = self.get_serializer(customer, data=request.data, partial=False)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
+
+        if serializer.instance:
+
+            customer_data = {
+                'user_action': 'update',     
+                'customer_id': customer.user.id,
+                'username': user.username,
+                'phone_number': customer.phone_number,  
+                'spent_money': str(customer.total_spent),  
+                'date_joined': customer.user.date_joined.isoformat() 
+            }
+
+            customer_json = json.dumps(customer_data)
+            send_message('customer_topic', customer_json)
+
         return Response(serializer.data)
 
     def partial_update(self, request, *args, **kwargs):
         customer = self.get_object()
         if customer.user != request.user and not request.user.is_staff:
-            return Response({"error": "You can only update your own profile."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"error": "You can update only your profile."}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = self.get_serializer(customer, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -98,12 +153,12 @@ class CustomerViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         customer = self.get_object()
         if customer.user != request.user and not request.user.is_staff:
-            return Response({"detail": "You do not have permission to delete this profile."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": "You don't have permission to delete this account"}, status=status.HTTP_403_FORBIDDEN)
 
         user = customer.user
         response = super().destroy(request, *args, **kwargs)
         user.delete()
-        return Response({"detail": "Customer successfully deleted."}, status=status.HTTP_200_OK)
+        return Response({"detail": "Client successfully deleted."}, status=status.HTTP_200_OK)
 
 
 class ReviewViewSet(viewsets.ModelViewSet):
@@ -304,6 +359,20 @@ class OrderViewSet(viewsets.ModelViewSet):
         order.total_price = order.calculate_total()
         order.save()
 
+        # Проверка успешного сохранения заказа перед отправкой сообщения
+        if order.pk is not None:
+            order_data = {
+                'order_action': 'create',
+                'order_id': order.id,
+                'customer_id': customer.user.id,
+                'status': order.status,
+                'total_price': str(order.total_price),
+                'discount': str(order.discount),
+                'created_at': order.created_at.isoformat(),
+                'updated_at': order.updated_at.isoformat()
+            }
+            send_message('order_topic',json.dumps(order_data))
+
         cart_items.delete()
 
         serializer = OrderSerializer(order)
@@ -322,5 +391,20 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(order, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+
+            # Проверка успешного сохранения перед отправкой сообщения
+            if order.pk is not None:
+                order_data = {
+                    'order_action': 'update',
+                    'order_id': order.id,
+                    'customer_id': order.customer.user.id if order.customer else None,
+                    'status': order.status,
+                    'total_price': str(order.total_price),
+                    'discount': str(order.discount),
+                    'created_at': order.created_at.isoformat(),
+                    'updated_at': order.updated_at.isoformat()
+                }
+                send_message('order_topic',json.dumps(order_data))
+
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

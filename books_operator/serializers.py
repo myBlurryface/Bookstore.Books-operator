@@ -1,3 +1,5 @@
+from .kafka_producer import *
+import json
 from rest_framework import serializers
 from .models import *
 
@@ -11,10 +13,11 @@ class CustomerSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
     phone_number = serializers.CharField(max_length=20, required=True)
     spent_money = serializers.DecimalField(source='total_spent', max_digits=10, decimal_places=2, read_only=True)
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), write_only=True)
 
     class Meta:
         model = Customer
-        fields = ['id', 'username', 'phone_number', 'spent_money']
+        fields = ['id', 'username', 'phone_number', 'spent_money', 'user']
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
@@ -25,25 +28,33 @@ class CustomerSerializer(serializers.ModelSerializer):
         
         return representation
 
-    def validate_username(self, value):
-        if self.instance:
-            # Username doesn't exists in database, when you update username for exist user
-            if self.instance.user.username != value and User.objects.filter(username=value).exists():
-                raise serializers.ValidationError("This username already taken.")
-            # Username doesn't exists in database, when add new user
-        elif User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("This username already taken.")
-        return value
-
     def validate_phone_number(self, value):
         if self.instance:
-            # Phone number doesn't exists in database, when you update Phone number for exist user
             if self.instance.phone_number != value and Customer.objects.filter(phone_number=value).exists():
-                raise serializers.ValidationError("This phone number already exists.")
-            # Phone number doesn't exists in database, when add new user    
+                raise serializers.ValidationError("This username already exists.")
         elif Customer.objects.filter(phone_number=value).exists():
-            raise serializers.ValidationError("This phone number already exists.")
+            raise serializers.ValidationError("This username already exists.")
         return value
+
+    def create(self, validated_data):
+        user = validated_data.pop('user')
+
+        customer = Customer.objects.create(user=user, **validated_data)
+
+        customer_data = {
+            'user_action': 'create',
+            'customer_id': customer.user.id,
+            'username': user.username,
+            'phone_number': customer.phone_number,
+            'spent_money': str(customer.total_spent),
+            'date_joined': customer.user.date_joined.isoformat()
+        }
+
+        customer_json = json.dumps(customer_data)
+        #send_message('customer_topic', customer_json)
+
+        return customer
+
 
 class ReviewSerializer(serializers.ModelSerializer):
     class Meta:

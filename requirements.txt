@@ -7,3 +7,6 @@ psycopg2-binary==2.9.9
 PyJWT==2.9.0
 python-dotenv==1.0.1
 sqlparse==0.5.1
+kafka-python==2.0.2
+confluent-kafka==2.6.0
+six==1.16.0

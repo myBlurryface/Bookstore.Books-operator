@@ -6,6 +6,7 @@ from books_operator.models import User, Book
 
 
 class BookTests(APITestCase):
+    
     def setUp(self):
         self.user = User.objects.create_user(username='testuser', password='password')
         self.admin_user = User.objects.create_superuser(username='adminuser', password='password')

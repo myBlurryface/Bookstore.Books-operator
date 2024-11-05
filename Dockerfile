@@ -1,5 +1,5 @@
 # Using base python
-FROM python:3.12-slim
+FROM python:3.11
 
 # Install dependencies for compiling packages
 RUN apt-get update && apt-get install -y \
@@ -14,14 +14,7 @@ WORKDIR /app
 COPY . .
 
 # Install Python dependencies
-RUN pip install --upgrade pip && pip install -r requirements.txt
-
-# Copy the entrypoint script and set execute permissions
-COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+RUN pip install --upgrade pip && pip install -r requirements.txt --no-deps
 
 # Expose the working port
 EXPOSE 8000
-
-CMD ['python' 'manage.py' 'migrate']
-CMD ['python' 'manage.py' 'runserver']
