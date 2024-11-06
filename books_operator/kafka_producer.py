@@ -7,7 +7,7 @@ config = {
 
 
 def delivery_report(err, msg):
-   if err is not None:
+    if err is not None:
         print(f'Message delivery failed: {err}')
     else:
         print(f'Message delivered to {msg.topic()} [{msg.partition()}]')
@@ -15,6 +15,5 @@ def delivery_report(err, msg):
 producer = Producer(config)
 
 def send_message(topic, message):
-    return
     producer.produce(topic, value=message, callback=delivery_report)
     producer.flush()
