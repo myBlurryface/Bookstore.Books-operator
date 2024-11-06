@@ -43,7 +43,7 @@ class CustomerSerializer(serializers.ModelSerializer):
 
         customer_data = {
             'user_action': 'create',
-            'customer_id': customer.user.id,
+            'customer_id': customer.id,
             'username': user.username,
             'phone_number': customer.phone_number,
             'spent_money': str(customer.total_spent),

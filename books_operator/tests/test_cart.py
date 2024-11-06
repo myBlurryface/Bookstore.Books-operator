@@ -5,7 +5,9 @@ from rest_framework_simplejwt.tokens import AccessToken
 from django.contrib.auth import get_user_model
 from books_operator.models import User, Cart, Customer, Book
 
+
 class CartTestCase(APITestCase):
+    
     def setUp(self):
         Customer.objects.all().delete()
 
@@ -77,7 +79,7 @@ class CartTestCase(APITestCase):
     def test_admin_can_view_specific_user_cart(self):
         self.api_authentication(self.admin_token)
         
-        response = self.client.get(reverse("cart-user-cart", kwargs={"user_id": self.user.id}))
+        response = self.client.get(reverse("cart-user-cart", kwargs={"user_id": self.customer.id}))
         self.assertEqual(response.status_code, status.HTTP_200_OK)  
         self.assertEqual(response.data[0]["book_title"], "Book 1")
 

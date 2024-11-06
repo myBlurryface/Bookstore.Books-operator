@@ -128,7 +128,7 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
             customer_data = {
                 'user_action': 'update',     
-                'customer_id': customer.user.id,
+                'customer_id': customer.id,
                 'username': user.username,
                 'phone_number': customer.phone_number,  
                 'spent_money': str(customer.total_spent),  
@@ -238,27 +238,22 @@ class CartViewSet(viewsets.ModelViewSet):
         book_id = request.data.get('book_id')
 
         try:
-            # Проверяем, есть ли эта книга уже в корзине пользователя
             cart_item = Cart.objects.get(customer=customer, book_id=book_id)
-            # Если книга есть, увеличиваем количество на 1 и вызываем метод update
+
             updated_quantity = cart_item.quantity + 1
-            return self.update_quantity(cart_item, updated_quantity)  # Вызываем метод update_quantity
+            return self.update_quantity(cart_item, updated_quantity) 
         except Cart.DoesNotExist:
-            # Если книги нет в корзине, создаем новый элемент корзины с количеством 1
             cart_item = Cart.objects.create(customer=customer,book_id=book_id,quantity=1)
             serializer = self.get_serializer(cart_item)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     # You can only update quantity by Patch/Put for this API Enpoint        
     def update(self, request, *args, **kwargs):
-        """Обновление количества единиц книги в корзине (доступно только владельцу корзины)"""
         cart_item = self.get_object()
 
-        # Проверка прав на обновление (только владелец корзины)
         if not self.check_object_permissions(request, cart_item):
             raise PermissionDenied("Permission denied.")
 
-        # Обновляем количество единиц книги
         updated_quantity = request.data.get('quantity', cart_item.quantity)
         return self.update_quantity(cart_item, updated_quantity)
 
@@ -284,7 +279,7 @@ class CartViewSet(viewsets.ModelViewSet):
         if request.user.is_staff:
             return Response({"error": "Admins cannot modify carts."}, status=status.HTTP_403_FORBIDDEN)
 
-        Cart.objects.filter(customer=request.user.customer).delete()  # Удаляем все элементы корзины пользователя
+        Cart.objects.filter(customer=request.user.customer).delete() 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     # Get user cart for Admin    
@@ -294,7 +289,7 @@ class CartViewSet(viewsets.ModelViewSet):
             return Response({"error": "Only admins can view other users' carts."}, status=status.HTTP_403_FORBIDDEN)
 
         try:
-            customer = Customer.objects.get(user__id=user_id)
+            customer = Customer.objects.get(id=user_id)
         except Customer.DoesNotExist:
             return Response({"error": "Customer not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -359,15 +354,13 @@ class OrderViewSet(viewsets.ModelViewSet):
         order.total_price = order.calculate_total()
         order.save()
 
-        # Проверка успешного сохранения заказа перед отправкой сообщения
         if order.pk is not None:
             order_data = {
                 'order_action': 'create',
                 'order_id': order.id,
-                'customer_id': customer.user.id,
+                'customer_id': customer.id,
                 'status': order.status,
                 'total_price': str(order.total_price),
-                'discount': str(order.discount),
                 'created_at': order.created_at.isoformat(),
                 'updated_at': order.updated_at.isoformat()
             }
@@ -392,7 +385,6 @@ class OrderViewSet(viewsets.ModelViewSet):
         if serializer.is_valid():
             serializer.save()
 
-            # Проверка успешного сохранения перед отправкой сообщения
             if order.pk is not None:
                 order_data = {
                     'order_action': 'update',
@@ -400,11 +392,24 @@ class OrderViewSet(viewsets.ModelViewSet):
                     'customer_id': order.customer.user.id if order.customer else None,
                     'status': order.status,
                     'total_price': str(order.total_price),
-                    'discount': str(order.discount),
                     'created_at': order.created_at.isoformat(),
                     'updated_at': order.updated_at.isoformat()
                 }
                 send_message('order_topic',json.dumps(order_data))
+
+            if order.status == 'delivered':
+                for item in order.items.all():
+                    item_data = {
+                        'book_id': item.book.id if item.book else None,
+                        'book_title': item.book.title if item.book else 'Unknown',
+                        'quantity': item.quantity,
+                        'price': str(item.price),
+                        'discount': str(item.discount),
+                        'total_price': str(item.get_total_price()),
+                        'purchase_date': datetime.now().isoformat()  
+                    }
+        
+                    send_message('order_items_topic', json.dumps(item_data))            
 
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
