@@ -1,7 +1,5 @@
-
-```markdown
 **Books-operator API app**
-
+```markdown
 ## Один из двух микросервисов Bookstore API  
 Bookstore это REST API для управления онлайн магазином книг с помощью Django, PostgreSQL, KAFKA. 
 Проект поддерживает аутентификацию с использованием JWT и использует Docker для контейнеризации приложения.
